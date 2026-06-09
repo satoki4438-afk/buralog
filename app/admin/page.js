@@ -55,23 +55,37 @@ export default function AdminPage() {
       await new Promise((resolve) => {
         service.textSearch(
           { query: item.shopName, language: "ja" },
-          async (results, status) => {
-            if (status === window.google.maps.places.PlacesServiceStatus.OK && results?.[0]) {
-              const place = results[0];
-              await updateDoc(doc(db, "items", item.id), {
-                shopId: place.place_id,
-                shopName: place.name || item.shopName,
-                address: place.formatted_address || item.address,
-                location: {
-                  lat: place.geometry.location.lat(),
-                  lng: place.geometry.location.lng(),
-                },
-              });
-              setBulkProgress((p) => ({ ...p, done: p.done + 1 }));
-            } else {
+          (results, status) => {
+            if (status !== window.google.maps.places.PlacesServiceStatus.OK || !results?.[0]) {
               setBulkProgress((p) => ({ ...p, failed: p.failed + 1 }));
+              resolve();
+              return;
             }
-            resolve();
+            const basic = results[0];
+            service.getDetails(
+              {
+                placeId: basic.place_id,
+                fields: ["place_id", "name", "formatted_address", "formatted_phone_number", "opening_hours", "geometry"],
+                language: "ja",
+              },
+              async (detail, dStatus) => {
+                const place = dStatus === window.google.maps.places.PlacesServiceStatus.OK && detail ? detail : basic;
+                const hours = place.opening_hours?.weekday_text?.join(" / ") || null;
+                await updateDoc(doc(db, "items", item.id), {
+                  shopId: place.place_id,
+                  shopName: place.name || item.shopName,
+                  address: place.formatted_address || item.address,
+                  phone: place.formatted_phone_number || item.phone || null,
+                  hours: hours || item.hours || null,
+                  location: {
+                    lat: place.geometry.location.lat(),
+                    lng: place.geometry.location.lng(),
+                  },
+                });
+                setBulkProgress((p) => ({ ...p, done: p.done + 1 }));
+                resolve();
+              }
+            );
           }
         );
       });
