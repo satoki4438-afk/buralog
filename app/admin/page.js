@@ -21,15 +21,9 @@ export default function AdminPage() {
   const [form, setForm] = useState(EMPTY_ITEM);
   const [mapsReady, setMapsReady] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [msg, setMsg] = useState("");
-  const autocompleteRef = useRef(null);
-  const shopInputRef = useRef(null);
-  const mapDivRef = useRef(null);
 
-  useEffect(() => {
-    loadItems();
-  }, []);
+  useEffect(() => { loadItems(); }, []);
 
   async function loadItems() {
     const snap = await getDocs(collection(db, "items"));
@@ -37,6 +31,7 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     if (window.google) { setMapsReady(true); return; }
     const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&language=ja`;
@@ -45,70 +40,25 @@ export default function AdminPage() {
     document.head.appendChild(script);
   }, []);
 
-  function searchPlaces() {
-    if (!mapsReady || !form.shopName) return;
-    setSearching(true);
-    setMsg("");
-    if (!mapDivRef.current) return;
-    const service = new window.google.maps.places.PlacesService(mapDivRef.current);
-    service.findPlaceFromText(
-      {
-        query: form.shopName,
-        fields: ["place_id", "name", "geometry", "formatted_address", "formatted_phone_number"],
-        locationBias: form.location?.lat
-          ? new window.google.maps.LatLng(form.location.lat, form.location.lng)
-          : undefined,
-      },
-      (results, status) => {
-        setSearching(false);
-        if (status !== window.google.maps.places.PlacesServiceStatus.OK || !results?.[0]) {
-          setMsg("Places APIで見つかりませんでした");
-          return;
-        }
-        const place = results[0];
-        setForm((f) => ({
-          ...f,
-          shopName: place.name || f.shopName,
-          address: place.formatted_address || f.address,
-          phone: place.formatted_phone_number || f.phone,
-          location: {
-            lat: place.geometry.location.lat(),
-            lng: place.geometry.location.lng(),
-          },
-          shopId: place.place_id || f.shopId,
-        }));
-        setMsg(`✓ 修正しました（${place.name}）`);
-      }
-    );
-  }
-
   function openNew() {
     setEditing(null);
     setForm(EMPTY_ITEM);
-    autocompleteRef.current = null;
     setTab("edit");
   }
 
   function openEdit(item) {
     setEditing(item.id);
     setForm({ ...EMPTY_ITEM, ...item });
-    autocompleteRef.current = null;
     setTab("edit");
   }
 
   async function handleSave() {
-    if (!form.productName || !form.shopName) {
-      setMsg("商品名・店名は必須です");
-      return;
-    }
+    if (!form.productName || !form.shopName) { setMsg("商品名・店名は必須です"); return; }
     setSaving(true);
     const data = {
       ...form,
       price: Number(form.price) || 0,
-      location: {
-        lat: parseFloat(form.location.lat) || 0,
-        lng: parseFloat(form.location.lng) || 0,
-      },
+      location: { lat: parseFloat(form.location.lat) || 0, lng: parseFloat(form.location.lng) || 0 },
     };
     if (editing) {
       await updateDoc(doc(db, "items", editing), data);
@@ -128,9 +78,7 @@ export default function AdminPage() {
     await loadItems();
   }
 
-  function setF(key, val) {
-    setForm((f) => ({ ...f, [key]: val }));
-  }
+  function setF(key, val) { setForm((f) => ({ ...f, [key]: val })); }
 
   const pendingItems = items.filter((i) => i.shopId?.startsWith("PENDING_"));
 
@@ -139,19 +87,30 @@ export default function AdminPage() {
       {/* ヘッダー */}
       <div style={{ background: "#111", padding: "12px 20px", display: "flex", alignItems: "center", gap: 16 }}>
         <span style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>ブラログ Admin</span>
-        <span style={{ color: "#666", fontSize: 12 }}>全{items.length}件 / PENDING: {pendingItems.length}件</span>
+        <span style={{ color: "#888", fontSize: 12 }}>全{items.length}件</span>
+        {pendingItems.length > 0 && (
+          <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700 }}>未修正: {pendingItems.length}件</span>
+        )}
       </div>
 
       {/* タブ */}
       <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #eee" }}>
-        {["list", "edit"].map((t) => (
+        {[["list","一覧"], ["fix","座標修正"], ["edit", editing ? "編集" : "新規追加"]].map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)} style={{
             padding: "12px 20px", border: "none", cursor: "pointer",
             background: tab === t ? "#111" : "#fff",
             color: tab === t ? "#fff" : "#333",
             fontSize: 13, fontWeight: tab === t ? 700 : 400,
+            position: "relative",
           }}>
-            {t === "list" ? "一覧" : editing ? "編集" : "新規追加"}
+            {label}
+            {t === "fix" && pendingItems.length > 0 && (
+              <span style={{
+                position: "absolute", top: 8, right: 6,
+                background: "#f59e0b", color: "#fff", borderRadius: 10,
+                fontSize: 10, padding: "1px 5px", fontWeight: 700,
+              }}>{pendingItems.length}</span>
+            )}
           </button>
         ))}
         <button onClick={openNew} style={{
@@ -178,90 +137,63 @@ export default function AdminPage() {
                   <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 2 }}>⚠ PENDING（Places未設定）</div>
                 )}
               </div>
-              <button onClick={() => openEdit(item)} style={{
-                padding: "6px 14px", borderRadius: 8, border: "1px solid #ddd",
-                background: "#fff", cursor: "pointer", fontSize: 12,
-              }}>編集</button>
-              <button onClick={() => handleDelete(item.id)} style={{
-                padding: "6px 14px", borderRadius: 8, border: "1px solid #fee2e2",
-                background: "#fff", cursor: "pointer", fontSize: 12, color: "#ef4444",
-              }}>削除</button>
+              <button onClick={() => openEdit(item)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", cursor: "pointer", fontSize: 12 }}>編集</button>
+              <button onClick={() => handleDelete(item.id)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #fee2e2", background: "#fff", cursor: "pointer", fontSize: 12, color: "#ef4444" }}>削除</button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 座標修正タブ */}
+      {tab === "fix" && (
+        <div style={{ padding: 16 }}>
+          {pendingItems.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#aaa", padding: 40, fontSize: 14 }}>PENDING件数: 0件</div>
+          ) : (
+            pendingItems.map((item) => (
+              <PendingItem key={item.id} item={item} mapsReady={mapsReady} onSaved={loadItems} />
+            ))
+          )}
         </div>
       )}
 
       {/* 編集フォーム */}
       {tab === "edit" && (
         <div style={{ padding: 16, maxWidth: 600, margin: "0 auto" }}>
-          {msg && (
-            <div style={{ padding: "10px 16px", background: "#d1fae5", borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
-              {msg}
-            </div>
-          )}
+          {msg && <div style={{ padding: "10px 16px", background: "#d1fae5", borderRadius: 8, fontSize: 13, marginBottom: 12 }}>{msg}</div>}
 
-          <Field label="店名（Places APIで自動補完）">
-            <input
-              ref={shopInputRef}
-              type="text"
-              defaultValue={form.shopName}
-              placeholder="店名を入力..."
-              style={inputStyle}
-              onChange={(e) => setF("shopName", e.target.value)}
-            />
+          <Field label="店名">
+            <input type="text" value={form.shopName} onChange={(e) => setF("shopName", e.target.value)} style={inputStyle} />
           </Field>
-
           <Field label="shopId">
             <input type="text" value={form.shopId} onChange={(e) => setF("shopId", e.target.value)} style={inputStyle} />
           </Field>
-
           <Field label="商品名 *">
             <input type="text" value={form.productName} onChange={(e) => setF("productName", e.target.value)} style={inputStyle} />
           </Field>
-
           <Field label="キャッチコピー">
             <textarea value={form.catchphrase} onChange={(e) => setF("catchphrase", e.target.value)} style={{ ...inputStyle, height: 72, resize: "vertical" }} />
           </Field>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <Field label="価格">
-              <input type="number" value={form.price} onChange={(e) => setF("price", e.target.value)} style={inputStyle} />
-            </Field>
+            <Field label="価格"><input type="number" value={form.price} onChange={(e) => setF("price", e.target.value)} style={inputStyle} /></Field>
             <Field label="カテゴリ">
               <select value={form.category} onChange={(e) => setF("category", e.target.value)} style={inputStyle}>
                 {CATEGORY_LIST.map((c) => <option key={c}>{c}</option>)}
               </select>
             </Field>
-            <Field label="エリア">
-              <input type="text" value={form.area} onChange={(e) => setF("area", e.target.value)} style={inputStyle} />
-            </Field>
-            <Field label="都道府県">
-              <input type="text" value={form.prefecture} onChange={(e) => setF("prefecture", e.target.value)} style={inputStyle} />
-            </Field>
+            <Field label="エリア"><input type="text" value={form.area} onChange={(e) => setF("area", e.target.value)} style={inputStyle} /></Field>
+            <Field label="都道府県"><input type="text" value={form.prefecture} onChange={(e) => setF("prefecture", e.target.value)} style={inputStyle} /></Field>
           </div>
 
-          <Field label="住所">
-            <input type="text" value={form.address} onChange={(e) => setF("address", e.target.value)} style={inputStyle} />
-          </Field>
-
+          <Field label="住所"><input type="text" value={form.address} onChange={(e) => setF("address", e.target.value)} style={inputStyle} /></Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <Field label="緯度">
-              <input type="text" value={form.location.lat} onChange={(e) => setForm((f) => ({ ...f, location: { ...f.location, lat: e.target.value } }))} style={inputStyle} />
-            </Field>
-            <Field label="経度">
-              <input type="text" value={form.location.lng} onChange={(e) => setForm((f) => ({ ...f, location: { ...f.location, lng: e.target.value } }))} style={inputStyle} />
-            </Field>
+            <Field label="緯度"><input type="text" value={form.location.lat} onChange={(e) => setForm((f) => ({ ...f, location: { ...f.location, lat: e.target.value } }))} style={inputStyle} /></Field>
+            <Field label="経度"><input type="text" value={form.location.lng} onChange={(e) => setForm((f) => ({ ...f, location: { ...f.location, lng: e.target.value } }))} style={inputStyle} /></Field>
           </div>
-
-          <Field label="電話">
-            <input type="text" value={form.phone || ""} onChange={(e) => setF("phone", e.target.value)} style={inputStyle} />
-          </Field>
-          <Field label="営業時間">
-            <input type="text" value={form.hours || ""} onChange={(e) => setF("hours", e.target.value)} style={inputStyle} />
-          </Field>
-          <Field label="定休日">
-            <input type="text" value={form.holiday || ""} onChange={(e) => setF("holiday", e.target.value)} style={inputStyle} />
-          </Field>
+          <Field label="電話"><input type="text" value={form.phone || ""} onChange={(e) => setF("phone", e.target.value)} style={inputStyle} /></Field>
+          <Field label="営業時間"><input type="text" value={form.hours || ""} onChange={(e) => setF("hours", e.target.value)} style={inputStyle} /></Field>
+          <Field label="定休日"><input type="text" value={form.holiday || ""} onChange={(e) => setF("holiday", e.target.value)} style={inputStyle} /></Field>
 
           <Field label="フラグ">
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
@@ -274,19 +206,98 @@ export default function AdminPage() {
             </div>
           </Field>
 
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              width: "100%", padding: "14px 0", borderRadius: 12,
-              background: "#111", color: "#fff", border: "none",
-              fontSize: 15, fontWeight: 700, cursor: "pointer", marginTop: 8,
-            }}
-          >
+          <button onClick={handleSave} disabled={saving} style={{
+            width: "100%", padding: "14px 0", borderRadius: 12,
+            background: "#111", color: "#fff", border: "none",
+            fontSize: 15, fontWeight: 700, cursor: "pointer", marginTop: 8,
+          }}>
             {saving ? "保存中..." : editing ? "更新する" : "追加する"}
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function PendingItem({ item, mapsReady, onSaved }) {
+  const inputRef = useRef(null);
+  const acRef = useRef(null);
+  const [data, setData] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!mapsReady || !inputRef.current || acRef.current) return;
+    const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
+      language: "ja", types: ["establishment"],
+    });
+    acRef.current = ac;
+    ac.addListener("place_changed", () => {
+      const place = ac.getPlace();
+      if (!place?.geometry) return;
+      const hours = place.opening_hours?.weekday_text?.join(" / ") || null;
+      setData({
+        shopId: place.place_id,
+        shopName: place.name || item.shopName,
+        address: place.formatted_address || item.address,
+        phone: place.formatted_phone_number || item.phone || null,
+        hours: hours || item.hours || null,
+        location: {
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng(),
+        },
+      });
+    });
+  }, [mapsReady]);
+
+  async function handleSave() {
+    if (!data) return;
+    setSaving(true);
+    await updateDoc(doc(db, "items", item.id), data);
+    setSaving(false);
+    setDone(true);
+    onSaved();
+  }
+
+  if (done) return null;
+
+  return (
+    <div style={{
+      background: "#fff", borderRadius: 10, padding: 16, marginBottom: 10,
+      border: "1px solid #f59e0b",
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{item.productName}</div>
+      <div style={{ fontSize: 12, color: "#888", marginBottom: 10 }}>{item.shopName} · {item.area}</div>
+
+      <input
+        ref={inputRef}
+        type="text"
+        defaultValue={item.shopName}
+        placeholder="店名で検索..."
+        style={{ ...inputStyle, marginBottom: 8 }}
+      />
+
+      {data && (
+        <div style={{ background: "#f0fdf4", borderRadius: 8, padding: "8px 12px", marginBottom: 8, fontSize: 12, color: "#166534" }}>
+          <div>📍 {data.address}</div>
+          {data.phone && <div>📞 {data.phone}</div>}
+          {data.hours && <div>🕐 {data.hours.slice(0, 60)}...</div>}
+          <div style={{ color: "#666", marginTop: 4 }}>lat: {data.location.lat.toFixed(6)}, lng: {data.location.lng.toFixed(6)}</div>
+        </div>
+      )}
+
+      <button
+        onClick={handleSave}
+        disabled={!data || saving}
+        style={{
+          padding: "8px 20px", borderRadius: 8, border: "none",
+          background: data ? "#111" : "#ddd",
+          color: data ? "#fff" : "#999",
+          fontSize: 13, fontWeight: 700, cursor: data ? "pointer" : "default",
+        }}
+      >
+        {saving ? "保存中..." : "保存"}
+      </button>
     </div>
   );
 }
@@ -302,6 +313,5 @@ function Field({ label, children }) {
 
 const inputStyle = {
   width: "100%", padding: "8px 12px", borderRadius: 8,
-  border: "1px solid #ddd", fontSize: 14, outline: "none",
-  background: "#fff",
+  border: "1px solid #ddd", fontSize: 14, outline: "none", background: "#fff",
 };
