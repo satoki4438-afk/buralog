@@ -51,24 +51,17 @@ export default function AdminPage() {
     setBulkProgress({ done: 0, failed: 0, total: targets.length });
     const service = new window.google.maps.places.PlacesService(bulkDivRef.current);
 
-    for (let i = 0; i < targets.length; i++) {
-      const item = targets[i];
+    for (const item of targets) {
       await new Promise((resolve) => {
-        service.findPlaceFromText(
-          {
-            query: item.shopName,
-            fields: ["place_id", "name", "geometry", "formatted_address", "formatted_phone_number", "opening_hours"],
-          },
+        service.textSearch(
+          { query: item.shopName, language: "ja" },
           async (results, status) => {
             if (status === window.google.maps.places.PlacesServiceStatus.OK && results?.[0]) {
               const place = results[0];
-              const hours = place.opening_hours?.weekday_text?.join(" / ") || null;
               await updateDoc(doc(db, "items", item.id), {
                 shopId: place.place_id,
                 shopName: place.name || item.shopName,
                 address: place.formatted_address || item.address,
-                phone: place.formatted_phone_number || item.phone || null,
-                hours: hours || item.hours || null,
                 location: {
                   lat: place.geometry.location.lat(),
                   lng: place.geometry.location.lng(),
@@ -82,8 +75,7 @@ export default function AdminPage() {
           }
         );
       });
-      // API制限対策: 200ms待機
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 300));
     }
 
     await loadItems();
@@ -197,7 +189,7 @@ export default function AdminPage() {
       {/* 座標修正タブ */}
       {tab === "fix" && (
         <div style={{ padding: 16 }}>
-          <div ref={bulkDivRef} style={{ display: "none" }} />
+          <div ref={bulkDivRef} style={{ width: 1, height: 1, position: "absolute", opacity: 0 }} />
 
           {pendingItems.length === 0 ? (
             <div style={{ textAlign: "center", color: "#aaa", padding: 40, fontSize: 14 }}>PENDING件数: 0件</div>
