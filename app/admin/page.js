@@ -22,6 +22,9 @@ export default function AdminPage() {
   const [mapsReady, setMapsReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [bulkFixing, setBulkFixing] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(null);
+  const bulkDivRef = useRef(null);
 
   useEffect(() => { loadItems(); }, []);
 
@@ -39,6 +42,53 @@ export default function AdminPage() {
     script.onload = () => setMapsReady(true);
     document.head.appendChild(script);
   }, []);
+
+  async function handleBulkFix() {
+    if (!mapsReady || !bulkDivRef.current) return;
+    const targets = items.filter((i) => i.shopId?.startsWith("PENDING_"));
+    if (targets.length === 0) return;
+    setBulkFixing(true);
+    setBulkProgress({ done: 0, failed: 0, total: targets.length });
+    const service = new window.google.maps.places.PlacesService(bulkDivRef.current);
+
+    for (let i = 0; i < targets.length; i++) {
+      const item = targets[i];
+      await new Promise((resolve) => {
+        service.findPlaceFromText(
+          {
+            query: item.shopName,
+            fields: ["place_id", "name", "geometry", "formatted_address", "formatted_phone_number", "opening_hours"],
+          },
+          async (results, status) => {
+            if (status === window.google.maps.places.PlacesServiceStatus.OK && results?.[0]) {
+              const place = results[0];
+              const hours = place.opening_hours?.weekday_text?.join(" / ") || null;
+              await updateDoc(doc(db, "items", item.id), {
+                shopId: place.place_id,
+                shopName: place.name || item.shopName,
+                address: place.formatted_address || item.address,
+                phone: place.formatted_phone_number || item.phone || null,
+                hours: hours || item.hours || null,
+                location: {
+                  lat: place.geometry.location.lat(),
+                  lng: place.geometry.location.lng(),
+                },
+              });
+              setBulkProgress((p) => ({ ...p, done: p.done + 1 }));
+            } else {
+              setBulkProgress((p) => ({ ...p, failed: p.failed + 1 }));
+            }
+            resolve();
+          }
+        );
+      });
+      // API制限対策: 200ms待機
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    await loadItems();
+    setBulkFixing(false);
+  }
 
   function openNew() {
     setEditing(null);
@@ -147,12 +197,49 @@ export default function AdminPage() {
       {/* 座標修正タブ */}
       {tab === "fix" && (
         <div style={{ padding: 16 }}>
+          <div ref={bulkDivRef} style={{ display: "none" }} />
+
           {pendingItems.length === 0 ? (
             <div style={{ textAlign: "center", color: "#aaa", padding: 40, fontSize: 14 }}>PENDING件数: 0件</div>
           ) : (
-            pendingItems.map((item) => (
-              <PendingItem key={item.id} item={item} mapsReady={mapsReady} onSaved={loadItems} />
-            ))
+            <>
+              {/* 一括修正エリア */}
+              <div style={{ background: "#fff", borderRadius: 12, padding: 16, marginBottom: 16, border: "1px solid #eee" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button
+                    onClick={handleBulkFix}
+                    disabled={bulkFixing || !mapsReady}
+                    style={{
+                      padding: "10px 20px", borderRadius: 10, border: "none",
+                      background: bulkFixing ? "#ddd" : "#111",
+                      color: bulkFixing ? "#999" : "#fff",
+                      fontSize: 14, fontWeight: 700, cursor: bulkFixing ? "default" : "pointer",
+                    }}
+                  >
+                    ⚡ 一括自動修正
+                  </button>
+                  <span style={{ fontSize: 13, color: "#666" }}>
+                    {!bulkProgress && `${pendingItems.length}件を一括修正`}
+                    {bulkFixing && bulkProgress && `修正中... ${bulkProgress.done + bulkProgress.failed}/${bulkProgress.total}件完了`}
+                    {!bulkFixing && bulkProgress && `✅ ${bulkProgress.done}件修正完了${bulkProgress.failed > 0 ? `（${bulkProgress.failed}件失敗）` : ""}`}
+                  </span>
+                </div>
+                {bulkFixing && bulkProgress && (
+                  <div style={{ marginTop: 10, background: "#f5f5f5", borderRadius: 6, height: 6, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", background: "#111", borderRadius: 6,
+                      width: `${((bulkProgress.done + bulkProgress.failed) / bulkProgress.total) * 100}%`,
+                      transition: "width 0.3s",
+                    }} />
+                  </div>
+                )}
+              </div>
+
+              {/* 手動修正リスト */}
+              {pendingItems.map((item) => (
+                <PendingItem key={item.id} item={item} mapsReady={mapsReady} onSaved={loadItems} />
+              ))}
+            </>
           )}
         </div>
       )}
