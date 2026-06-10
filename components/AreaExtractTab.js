@@ -11,8 +11,7 @@ const AREA_TYPES = {
   C: { label: "地方・普通の街", radius: 2000, multi: false },
 };
 
-const INCLUDE_TYPES = ["cafe", "bakery", "meal_takeaway", "food"];
-const EXCLUDE_TYPES = ["bar", "night_club", "lodging"];
+const EXCLUDE_TYPES = ["night_club", "bar", "lodging", "casino", "cemetery", "police", "hospital", "doctor"];
 
 const TYPE_CATEGORY_MAP = {
   bakery: "洋スイーツ",
@@ -35,8 +34,7 @@ function guessCategory(types) {
 
 function passesFilter(place) {
   const types = place.types || [];
-  if (EXCLUDE_TYPES.includes(types[0])) return false;
-  if (!types.some((t) => INCLUDE_TYPES.includes(t))) return false;
+  if (types.some((t) => EXCLUDE_TYPES.includes(t))) return false;
   if (place.rating !== undefined && place.rating < 3.0) return false;
   if (place.price_level !== undefined && (place.price_level < 1 || place.price_level > 2)) return false;
   return true;
@@ -111,30 +109,27 @@ export default function AreaExtractTab({ mapsReady, existingShopIds, onImported 
     const rawFound = new Map();
 
     for (const point of validPoints) {
-      for (const type of INCLUDE_TYPES) {
-        await new Promise((resolve) => {
-          service.nearbySearch(
-            {
-              location: new window.google.maps.LatLng(point.lat, point.lng),
-              radius: point.radius,
-              type,
-              language: "ja",
-            },
-            (places, status) => {
-              if (status === window.google.maps.places.PlacesServiceStatus.OK && places) {
-                for (const place of places) {
-                  rawFound.set(place.place_id, place);
-                  if (!found.has(place.place_id) && passesFilter(place)) {
-                    found.set(place.place_id, place);
-                  }
+      await new Promise((resolve) => {
+        service.nearbySearch(
+          {
+            location: new window.google.maps.LatLng(point.lat, point.lng),
+            radius: point.radius,
+            language: "ja",
+          },
+          (places, status) => {
+            if (status === window.google.maps.places.PlacesServiceStatus.OK && places) {
+              for (const place of places) {
+                rawFound.set(place.place_id, place);
+                if (!found.has(place.place_id) && passesFilter(place)) {
+                  found.set(place.place_id, place);
                 }
               }
-              resolve();
             }
-          );
-        });
-        await new Promise((r) => setTimeout(r, 200));
-      }
+            resolve();
+          }
+        );
+      });
+      await new Promise((r) => setTimeout(r, 200));
     }
 
     const list = Array.from(found.values()).map((place) => ({
