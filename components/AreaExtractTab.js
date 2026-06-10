@@ -332,17 +332,20 @@ function PointInput({ point, mapsReady, onUpdate, onRemove }) {
     });
   }, [mapsReady]);
 
+  function tryParseLatLng(value) {
+    const m = value.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if (!m) return;
+    onUpdate({ label: value, lat: Number(m[1]), lng: Number(m[2]) });
+  }
+
   function handleKeyDown(e) {
     if (e.key !== "Enter") return;
-    const m = e.target.value.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
-    if (!m) return;
-    e.preventDefault();
-    onUpdate({ label: e.target.value, lat: Number(m[1]), lng: Number(m[2]) });
+    tryParseLatLng(e.target.value);
   }
 
   return (
     <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-      <input ref={inputRef} type="text" placeholder="場所を検索 または 緯度,経度" defaultValue={point.label} onKeyDown={handleKeyDown} style={{ ...inputStyle, flex: 2 }} />
+      <input ref={inputRef} type="text" placeholder="場所を検索 または 緯度,経度" defaultValue={point.label} onKeyDown={handleKeyDown} onBlur={(e) => tryParseLatLng(e.target.value)} style={{ ...inputStyle, flex: 2 }} />
       <input
         type="number"
         value={point.radius}
