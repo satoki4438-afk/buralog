@@ -35,7 +35,7 @@ function guessCategory(types) {
 
 function passesFilter(place) {
   const types = place.types || [];
-  if (types.some((t) => EXCLUDE_TYPES.includes(t))) return false;
+  if (EXCLUDE_TYPES.includes(types[0])) return false;
   if (!types.some((t) => INCLUDE_TYPES.includes(t))) return false;
   if (place.rating !== undefined && place.rating < 3.0) return false;
   if (place.price_level !== undefined && (place.price_level < 1 || place.price_level > 2)) return false;
@@ -108,6 +108,7 @@ export default function AreaExtractTab({ mapsReady, existingShopIds, onImported 
 
     const service = new window.google.maps.places.PlacesService(serviceDivRef.current);
     const found = new Map();
+    const rawFound = new Map();
 
     for (const point of validPoints) {
       for (const type of INCLUDE_TYPES) {
@@ -122,6 +123,7 @@ export default function AreaExtractTab({ mapsReady, existingShopIds, onImported 
             (places, status) => {
               if (status === window.google.maps.places.PlacesServiceStatus.OK && places) {
                 for (const place of places) {
+                  rawFound.set(place.place_id, place);
                   if (!found.has(place.place_id) && passesFilter(place)) {
                     found.set(place.place_id, place);
                   }
@@ -152,7 +154,7 @@ export default function AreaExtractTab({ mapsReady, existingShopIds, onImported 
     list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
     setResults(list);
     setSearching(false);
-    setSearchMsg(`${list.length}件ヒット（既存: ${list.filter((r) => r.isExisting).length}件）`);
+    setSearchMsg(`API取得: ${rawFound.size}件 → フィルター後: ${list.length}件（既存: ${list.filter((r) => r.isExisting).length}件）`);
   }
 
   function toggleResult(placeId) {
