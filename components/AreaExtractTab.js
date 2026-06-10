@@ -12,7 +12,7 @@ const AREA_TYPES = {
 };
 
 const INCLUDE_TYPES = ["cafe", "bakery", "meal_takeaway", "food"];
-const EXCLUDE_TYPES = ["restaurant", "bar", "night_club", "lodging"];
+const EXCLUDE_TYPES = ["bar", "night_club", "lodging"];
 
 const TYPE_CATEGORY_MAP = {
   bakery: "洋スイーツ",
