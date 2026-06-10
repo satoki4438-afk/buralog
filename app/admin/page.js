@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { collection, getDocs, doc, updateDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { CATEGORY_LIST } from "@/lib/categories";
+import AreaExtractTab from "@/components/AreaExtractTab";
 
 const EMPTY_ITEM = {
   shopId: "", productName: "", shopName: "", catchphrase: "",
@@ -151,7 +152,7 @@ export default function AdminPage() {
 
       {/* タブ */}
       <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #eee" }}>
-        {[["list","一覧"], ["fix","座標修正"], ["edit", editing ? "編集" : "新規追加"]].map(([t, label]) => (
+        {[["list","一覧"], ["fix","座標修正"], ["extract","エリア一括抽出"], ["edit", editing ? "編集" : "新規追加"]].map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)} style={{
             padding: "12px 20px", border: "none", cursor: "pointer",
             background: tab === t ? "#111" : "#fff",
@@ -248,6 +249,15 @@ export default function AdminPage() {
             </>
           )}
         </div>
+      )}
+
+      {/* エリア一括抽出タブ */}
+      {tab === "extract" && (
+        <AreaExtractTab
+          mapsReady={mapsReady}
+          existingShopIds={new Set(items.map((i) => i.shopId))}
+          onImported={loadItems}
+        />
       )}
 
       {/* 編集フォーム */}
