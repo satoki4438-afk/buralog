@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { collection, doc, writeBatch } from "firebase/firestore";
+import { collection, doc, getDocs, setDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { CATEGORY_LIST } from "@/lib/categories";
+import { ONSEN_AREAS } from "@/lib/onsenAreas";
 
 const AREA_TYPES = {
   A: { label: "観光地・温泉街", radius: 300, multi: true },
@@ -18,6 +19,12 @@ const TYPE_CATEGORY_MAP = {
   cafe: "ドリンク",
   meal_takeaway: "ガッツリ",
 };
+
+function formatDate(ts) {
+  const d = ts?.toDate ? ts.toDate() : ts;
+  if (!d) return "";
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 function guessCategory(types) {
   for (const t of types || []) {
@@ -47,7 +54,29 @@ export default function AreaExtractTab({ mapsReady, existingShopIds, onImported 
   const [results, setResults] = useState([]);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+  const [progressMap, setProgressMap] = useState({});
   const serviceDivRef = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      const snap = await getDocs(collection(db, "areaExtractProgress"));
+      const map = {};
+      snap.docs.forEach((d) => { map[d.data().areaName] = d.data(); });
+      setProgressMap(map);
+    })();
+  }, []);
+
+  function applyPreset(name) {
+    const area = ONSEN_AREAS.find((a) => a.name === name);
+    if (!area) return;
+    setAreaName(area.name);
+    setPrefecture(area.prefecture);
+    setAreaType("A");
+    setPoints([{ key: pointSeq++, label: area.name, lat: area.lat, lng: area.lng, radius: AREA_TYPES.A.radius }]);
+    setResults([]);
+    setSearchMsg("");
+    setImportMsg("");
+  }
 
   function addPoint() {
     setPoints((ps) => [...ps, { key: pointSeq++, label: "", lat: null, lng: null, radius: AREA_TYPES[areaType].radius }]);
@@ -172,6 +201,15 @@ export default function AreaExtractTab({ mapsReady, existingShopIds, onImported 
       });
     }
     await batch.commit();
+
+    if (areaName) {
+      const progressId = encodeURIComponent(areaName);
+      await setDoc(doc(db, "areaExtractProgress", progressId), {
+        areaName, prefecture, lastExtractedAt: serverTimestamp(), importedCount: targets.length,
+      }, { merge: true });
+      setProgressMap((m) => ({ ...m, [areaName]: { areaName, prefecture, lastExtractedAt: new Date(), importedCount: targets.length } }));
+    }
+
     setImporting(false);
     setImportMsg(`✅ ${targets.length}件インポートしました`);
     onImported();
@@ -183,6 +221,24 @@ export default function AreaExtractTab({ mapsReady, existingShopIds, onImported 
   return (
     <div style={{ padding: 16, maxWidth: 700, margin: "0 auto" }}>
       <div ref={serviceDivRef} style={{ width: 1, height: 1, position: "absolute", opacity: 0 }} />
+
+      {/* 温泉地プリセット */}
+      <Field label="温泉地プリセット">
+        <select
+          defaultValue=""
+          onChange={(e) => { if (e.target.value) applyPreset(e.target.value); e.target.value = ""; }}
+          style={inputStyle}
+        >
+          <option value="">選択してください...</option>
+          {ONSEN_AREAS.map((a) => {
+            const p = progressMap[a.name];
+            const label = p
+              ? `✅ ${a.name}（${a.prefecture}）- 最終更新: ${formatDate(p.lastExtractedAt)} ${p.importedCount}件`
+              : `${a.name}（${a.prefecture}）`;
+            return <option key={a.name} value={a.name}>{label}</option>;
+          })}
+        </select>
+      </Field>
 
       {/* エリア基本情報 */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
